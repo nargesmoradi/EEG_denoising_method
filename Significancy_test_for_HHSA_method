@@ -1,0 +1,137 @@
+Nstd = 0.2;
+NR = 150;
+MaxIter = 100;
+SNRFlag = 1;
+
+len = 50;                                       % Length (sec)
+f   = 30;                                     % Frequency (Hz)
+Fs  = 200;                                     % Sampling Frequency (Hz) %200 % note that sampling frequency has to be at least 2times the frequency of the signal
+t   = linspace(0, len, Fs*len);                 % Time Vector
+
+%Creating sin signal with the frequency of f and pink and white noise
+signal = sin(2*pi*f*t)+0.5.*sin(2*pi*60*t)+sin(2*pi*75*t);                        % (f = 30Hz sine)
+
+
+nTest = 100;
+
+
+for n = 1:nTest,
+    n 
+    close all;
+    clearvars -except n noisy_signal nTest filtered_pink_noise pink_noise signal t Fs f len SNRFlag...
+    MaxIter NR Nstd imfinsf_am imfinse_am imfinse_am_ttest imfinsf_am_ttest
+white_noise=randn(1,Fs*len); 
+pink_noise = pinknoise(1,Fs*len);
+
+filtered_pink_noise = bandpass(pink_noise,[30 80],Fs);
+filtered_white_noise = bandpass(white_noise,[30 80],Fs);
+
+%Creating noisy signal
+%noisy_signal(n,:) = signal+  0.65 .* filtered_pink_noise + 0.65 .*filtered_white_noise;%ffor 30 hz
+noisy_signal(n,:) = signal+ sqrt(0.3) .* filtered_pink_noise .* sqrt(0.3) .* filtered_white_noise .* signal + 0.6 .* filtered_pink_noise + 0.6 .* filtered_white_noise; %constant factors are chosen based on the desired SNR
+
+
+
+
+%% finding upper envelope of noisy signal IMFs
+
+up_env_ts = [];
+figure;
+
+TSTS = [];
+ss = [];
+h = [];
+time=[];
+ts=[];
+R1 = [];
+R_end = [];
+R = [];
+dim = [];
+peaks = [];
+TS = [];
+s = [];
+
+
+
+R = noisy_signal(n,:);
+dim = size(R,2);
+
+
+c = 1;
+M = c; % margin
+
+
+Max = zeros((dim(1)+2*M),1);
+
+h2 = zeros ((dim(1)+2*M),1);  % for max marrix
+
+h2((M+1):(M+dim(1)), 1) = R;
+
+% Calculating Max Envelope
+i =0;
+for x = (M+1) : (M+dim(1)),
+    
+    if (h2(x,1)== max(h2(x-M : x+M , 1)));
+        Max(x,1)=max(h2(x-M : x+M , 1)); % in a cube with size W_en*W_en*W_en
+        i = i+1;
+        TS(i)= max(h2(x-M : x+M , 1));
+        s(i)= x-1;
+    end
+end
+
+if R(1) < 0
+    R1= 0;
+else
+    R1= R(1);
+end
+
+if R(end) < 0
+    R_end= 0;
+else
+    R_end= R(end);
+end
+    
+TSTS = spline(s,[R1 TS R_end]);
+ss = linspace(1, s(end), dim(1));
+
+
+plot(s, TS,ss,ppval(TSTS,ss),'b'); %TS:timeseries magnitude %s: time
+hold on;
+plot(R);
+hold off
+
+%getting fitted spline curve coordinates
+h = findobj(gca,'Type','line')
+time=get(h,'Xdata')
+ts=get(h,'Ydata')
+
+
+up_env_ts = ts{2,1};
+
+
+
+%% Step2 : phase amplitude power to find the significant power
+    
+up_env_ts_imf = iceemdan(up_env_ts,Nstd,NR,MaxIter,SNRFlag);
+
+for j = 1: length(up_env_ts_imf(:,1)),
+ 
+[HS_am, fres1_am, t_am,imfinsf1_am,imfinse1_am] = hht(squeeze(up_env_ts_imf(j, :)),Fs);
+
+
+fres_am (:,j) = fres1_am;
+imfinsf_am_ttest(:,j,n) = imfinsf1_am;
+imfinse_am_ttest (:,j,n) = imfinse1_am;
+end
+end
+
+for k = 1:10000,
+    for j = 1:12,
+z_test(k,j) = (imfinse_am (k,j)-mean(imfinse_am_ttest (k,j,:)))/(std(imfinse_am_ttest (k,j,:))/nTest);
+    end
+end
+
+
+z1 = z_test;
+z1(z1(:,:)>-1.64) =1;
+z1(z1(:,:)<-1.64) =0;
