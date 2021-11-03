@@ -1,0 +1,308 @@
+clear all
+close all
+
+EEG_data = load ('EEG.mat'); %Load signal of one of the EEG channels
+
+%% Step 1: Decomposing EEG signal into its IMFs to find IMFs corresponding to the gamma band
+
+temporal_imf = iceemdan(EEG_data,Nstd,NR,MaxIter,SNRFlag);;
+Fs  = 200; % Fs of the data that we used
+temporal_imf = temporal_imf.temporal_imf;
+noisy_signal = temporal_imf;
+
+
+%power spectrum of the noisy signal
+figure;
+j = 1;
+for i = 1:length(temporal_imf(1,:,1)),
+    hold on;
+    [pxx_noisy_signal,f_noisy_signal] = pwelch(noisy_signal(i,:), 100,[],2^nextpow2(length(noisy_signal(1,:))),200); % pwelch(signal, fs/2, [], 2^nextpow2(length of signal), fs)
+    PXX_noisy_signal(:,i)=pxx_noisy_signal;
+    F_noisy_signal(:,i)= f_noisy_signal;
+    
+    
+    subplot(length(temporal_imf(1,:,1)),2,j+1); plot(f_noisy_signal, pxx_noisy_signal); hold on; subplot(length(temporal_imf(1,:,1)),2,j); hold on; plot(noisy_signal(i,:));
+    j = j+2;
+end
+len = length(signal);                                       % Length (sec)                                     % Frequency (Hz)
+Fs  = 200;                                     % Sampling Frequency (Hz) %200 % note that sampling frequency has to be at leat 2times the frequency of the signal
+t   = linspace(0, len, Fs*len);  
+% sumation of IMFs, here imf1+imf2 which are corresponding to gamma band
+noisy_signal = squeeze(sum(noisy_signal(1:2,:),1));
+
+
+%% Step 2: finding upper envelope of the gamma signal
+
+up_env_ts = [];
+figure;
+
+TSTS = [];
+ss = [];
+h = [];
+time=[];
+ts=[];
+R1 = [];
+R_end = [];
+R = [];
+dim = [];
+peaks = [];
+TS = [];
+s = [];
+
+
+
+R = noisy_signal;
+dim = size(R,2);
+
+
+c = 1;
+M = c; % margin
+
+
+Max = zeros((dim(1)+2*M),1);
+
+h2 = zeros ((dim(1)+2*M),1);  % for max marrix
+
+h2((M+1):(M+dim(1)), 1) = R;
+
+% Calculating Max Envelope
+i =0;
+for x = (M+1) : (M+dim(1)),
+    
+    if (h2(x,1)== max(h2(x-M : x+M , 1)));
+        Max(x,1)=max(h2(x-M : x+M , 1)); % in a cube with size W_en*W_en*W_en
+        i = i+1;
+        TS(i)= max(h2(x-M : x+M , 1));
+        s(i)= x-1;
+    end
+end
+
+if R(1) < 0
+    R1= 0;
+else
+    R1= R(1);
+end
+
+if R(end) < 0
+    R_end= 0;
+else
+    R_end= R(end);
+end
+
+TSTS = spline(s,[R1 TS R_end]);
+ss = linspace(1, s(end), dim(1));
+
+
+plot(s, TS,ss,ppval(TSTS,ss),'b'); %TS:timeseries magnitude %s: time
+hold on;
+plot(R);
+hold off
+
+%getting fitted spline curve coordinates
+h = findobj(gca,'Type','line')
+time=get(h,'Xdata')
+ts=get(h,'Ydata')
+
+
+up_env_ts = ts{2,1};
+
+
+
+%% Step 3 : Applying iceemdan method to decompose the upper envelopr of the gamma signal
+Nstd = 0.2;
+NR = 150;
+MaxIter = 100;
+SNRFlag = 1;
+up_env_ts_imf = iceemdan(up_env_ts,Nstd,NR,MaxIter,SNRFlag);
+
+%% Step 4 : Computing instantaneous  frequencies of the upper envelope using HHT
+for j = 1: length(up_env_ts_imf(:,1)),
+    
+    [HS_am, fres1_am, t_am,imfinsf1_am,imfinse1_am] = hht(squeeze(up_env_ts_imf(j, :)),Fs);
+    
+    
+    fres_am (:,j) = fres1_am;
+    imfinsf_am(:,j) = imfinsf1_am;
+    imfinse_am (:,j) = imfinse1_am;
+end
+
+
+
+%% step 5: ploting Amplitude_power of the upper envelope to find the main imf (imf with the highest energy)
+
+imfinsf_am = abs(imfinsf_am);
+
+%
+k = 0;
+for i = 0:0.1:119.9,
+    k = k +1;
+    for c = 1:length(up_env_ts_imf(:,1)),
+        r = [];
+        r = find (imfinsf_am (:,c)<(i+0.1) & imfinsf_am (:,c)>(i));
+        am_energy_tot(c) = sum(sum(imfinse_am(r(:), c)));
+        
+    end
+    
+    am_energy_total (k) = sum(am_energy_tot(:));
+end
+
+%% step 6: The code for significancy test is provided separately
+
+%computing denoised signal based on the HHSA method after obtaining \Omega
+%and \omega:
+Omega = sum(sum(imfinse_am(1:5000,1:end).*z1.*imfinsf_am(1:5000,1:end)))/(sum(sum(imfinse_am(1:5000,1:end).*z1)));
+omega = sum(sum(imfinse_am(1:5000,1:end).*z1.*repelem(insf_FM,1,12)))/(sum(sum(imfinse_am(1:5000,1:end).*z1)));
+
+len = (length(EEG_data))/Fs;                                                                           
+Fs  = 200;                                     % Sampling Frequency (Hz) %200 
+t   = linspace(0, len, Fs*len);
+Denoised_final_signal_HHSA = (1+cos(2*pi*(Omega)*t)) .*sin(2*pi*omega*t);
+
+
+NMI_HHSA = 2* quickMI(Denoised_final_signal_HHSA', signal')/(quickEnt(Denoised_final_signal_HHSA')+ quickEnt(signal'))
+ 
+
+
+%% Step 7: Ploting the 2D-Power specrum of the \gamma band upper envelope and choosing IMFs of the upper envelope that needs to be removed
+
+figure;
+hold on;
+plot(am_energy_total(2:400)); hold on; set(gca, 'fontsize',14); title('Power specrum of the \gamma band upper envelope');
+xlabel('Frequency (Hz)'); ylabel('Power'); box on; hold off
+
+%% Step 8:
+for c = 1:length(up_env_ts_imf(:,1)),
+    k = 0;
+    
+    for i = 0:0.1:119.9,
+        k = k +1;
+        
+        r = [];
+        r = find (imfinsf_am (:,c)<(i+0.1) & imfinsf_am (:,c)>(i));
+        Am_energy1(k) = sum(imfinse_am(r(:), c));
+        Am_energy_tot(c,k) = Am_energy1(k);
+    end
+    avg_am_energy(c) = mean( Am_energy_tot(c,:));
+end
+
+figure;
+title('Power specrum of FM-IMFs');
+for c = 1:length(up_env_ts_imf(:,1)),
+    subplot(length(up_env_ts_imf(:,1)),1,c); hold on;
+    plot(Am_energy_tot(c,:));
+    hold on;hold on; set(gca, 'fontsize',14); xticks ([0 200 400 600 800 1000 1200])
+    xticklabels({0 20 40 60 80 100 120});
+    ylabel('Power'); box on; hold off
+end
+hold on
+title('Power specrum of FM-IMFs');
+hold off
+
+
+%% Step 9: Computing instant frequency(w) of noisy signal IMFs
+
+
+FM_w = cos(angle(hilbert(noisy_signal)));
+[HS_FM, fres_FM, t_FM,insf_FM,inse_FM] = hht(FM_w,Fs);
+
+figure; plot(FM_w); set(gca, 'fontsize', 14); title('Frequency modulated \gamma (FM part)'); hold on;
+box on; xlabel('Time (s)'); ylabel('Amplitude'); hold off;
+
+%% Step 10: Decomposing FM component of the signal into its IMFs-FM
+FM_w_imf = iceemdan(FM_w,Nstd,NR,MaxIter,SNRFlag);
+
+
+%% Step 11: The  instantaneous  frequencies of IMFs-FM
+for j = 1: length(FM_w_imf(:,1)),
+    [HS1_fm, fres1_fm, t_fm,imfinsf1_fm,imfinse1_fm] = hht(FM_w_imf(j,:),Fs);
+    
+    fres_fm (:,j) = fres1_fm;
+    imfinsf_fm(:,j) = imfinsf1_fm;
+    imfinse_fm (:,j) = imfinse1_fm;
+end
+imfinsf_fm = abs(imfinsf_fm);
+
+
+%% Step 12: Power spectrum for the FM of the whole FM_imfs usnig HHT
+k = 0;
+for i = 0:0.1:119.9,
+    k = k +1;
+    for c = 1:length(FM_w_imf(:,1)),
+        r = [];
+        r = find (imfinsf_fm (:,c)<(i+0.1) & imfinsf_fm (:,c)>(i));
+        fm_energy_tot(c) = sum(sum(imfinse_fm(r(:), c)));
+    end
+    
+    fm_energy_total (k) = sum(fm_energy_tot(:));
+end
+figure;
+hold on;
+plot(fm_energy_total(:))
+hold on; set(gca, 'fontsize',14);
+ylabel('Power'); box on;
+hold on
+title('Power specrum of Frequency modulated \gamma (FM)');
+hold off
+
+
+
+for c = 1:length(FM_w_imf(:,1)), %power spectrum for the FM of each FM_imfs
+    
+    k = 0;
+    
+    for i = 0:0.1:119.9,
+        k = k +1;
+        
+        r = [];
+        r = find (imfinsf_fm (:,c)<(i+0.1) & imfinsf_fm (:,c)>(i));
+        fm_energy1(k) = sum(imfinse_fm(r(:), c));
+        fm_energy_tot(c,k) = fm_energy1(k);
+    end
+    avg_fm_energy(c) = mean( fm_energy_tot(c,:));
+end
+
+figure;
+for c = 1:length(FM_w_imf(:,1)),
+    subplot(length(FM_w_imf(:,1)),1,c); hold on;
+    plot(fm_energy_tot(c,:));
+    hold on;
+    hold on; set(gca, 'fontsize',14);
+    ylabel('Power'); box on;
+    hold on
+    %title('Power specrum of Frequency modulated \gamma (FM)');
+    hold off
+end
+
+
+%% HHSA PSD plot
+figure;
+[c,h]= contourf(repelem(insf_FM,1,11),imfinsf_am(:,1:11),imfinse_am(:,1:11),200)
+hold on;  set(h,'LineColor','none');
+
+
+%% Step 13: Remove noisy IMFs and Put zero for the frequency we do not want to be in the signal
+
+N_imf = 1
+d = [];
+d(:,1) = find (imfinsf_fm(:,N_imf)<42); %frequncies higher than 42 Hz are removed from FM-IMF1
+FM_w_imf(N_imf,d(:,1))= 0;
+
+%%
+%d2 = [];
+%d2(:,1) = find (imfinsf_am(:,1)<20);
+%up_env_ts_imf(1,d2(:,1))= 0;
+
+d3 = [];
+d3(:,1) = find (imfinsf_am(:,2)<11); %frequncies higher than 11 Hz are removed from AM-IMF2
+up_env_ts_imf(2,d3(:,1))= 0;
+
+
+%% Step 14:
+
+PM_AM_FM = noisy_signal- (sum(up_env_ts_imf(4:10,:),1)+sum(up_env_ts_imf(1:2,:),1)).* FM_w ...
+    -(sum(FM_w_imf(3:end,:),1)+FM_w_imf(1,:)).*(up_env_ts-sum(up_env_ts_imf(4:10,:),1)-sum(up_env_ts_imf(1:2,:),1));
+
+PM_AM = noisy_signal- (sum(up_env_ts_imf(4:10,:),1)+sum(up_env_ts_imf(1:2,:),1)).* FM_w;
+
+NMI_Noisy_signal = 2* quickMI(noisy_signal', signal')/(quickEnt(noisy_signal')+ quickEnt(signal'))
+
