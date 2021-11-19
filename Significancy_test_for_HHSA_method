@@ -12,7 +12,7 @@ t   = linspace(0, len, Fs*len);                 % Time Vector
 signal = sin(2*pi*f*t)+0.5.*sin(2*pi*60*t)+sin(2*pi*75*t);                        % (f = 30Hz sine)
 
 
-nTest = 100;
+nTest = 1000;
 
 
 for n = 1:nTest,
