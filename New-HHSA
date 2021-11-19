@@ -24,7 +24,7 @@ for i = 1:length(temporal_imf(1,:,1)),
     subplot(length(temporal_imf(1,:,1)),2,j+1); plot(f_noisy_signal, pxx_noisy_signal); hold on; subplot(length(temporal_imf(1,:,1)),2,j); hold on; plot(noisy_signal(i,:));
     j = j+2;
 end
-len = length(signal);                                       % Length (sec)                                     % Frequency (Hz)
+len = length(signal);                                       % Length (sec)                                     
 Fs  = 200;                                     % Sampling Frequency (Hz) %200 % note that sampling frequency has to be at leat 2times the frequency of the signal
 t   = linspace(0, len, Fs*len);  
 % sumation of IMFs, here imf1+imf2 which are corresponding to gamma band
